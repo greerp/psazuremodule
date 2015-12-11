@@ -1,4 +1,14 @@
-﻿$serviceAccount = Read-Host -Prompt "Enter Service Account Name: "
+﻿Param(
+  [string]$accountname
+)
+
+if ( $accountname -eq $null ) {
+
+    $serviceAccount = Read-Host -Prompt "Enter Service Account Name: "
+}
+else {
+    $serviceAccount = $accountname
+}
 
 $objectFile =  ".\account-creds.xml"
 

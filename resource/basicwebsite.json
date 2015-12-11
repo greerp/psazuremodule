@@ -1,0 +1,66 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+
+    "parameters": {
+        "resourceSuffix": {
+            "type": "string"
+        },
+        "siteLocation": {
+            "type": "string"
+        }
+    },
+    "variables": {
+        "hostPlan" : "[concat('hostplan',parameters('resourceSuffix'))]",
+        "siteName" : "[concat('site',parameters('resourceSuffix'))]",
+        "siteLocation" : "[parameters('siteLocation')]"
+    },
+
+    "resources": [
+
+      {
+        "name": "[variables('hostPlan')]",
+        "type": "Microsoft.Web/serverfarms",
+        "apiVersion": "2015-08-01",
+        "location": "[variables('siteLocation')]",
+        "tags": {
+            "webfarm":"thefarm"
+        }
+        ,
+        "properties": {
+          "name": "[variables('hostPlan')]",
+          "numberOfWorkers": 1,
+          "workerSize": 0
+        },
+        "sku": {
+            "name": "F1",
+            "tier": "Free",
+            "size": "F1",
+            "family": "F",
+            "capacity": 0
+        }
+      },
+
+      {
+        "name": "[variables('siteName')]",
+        "type": "Microsoft.Web/sites",
+        "location": "[variables('siteLocation')]",
+        "tags": {
+          "displayName":"WebSite"
+        },
+        "apiVersion": "2015-08-01",
+        "dependsOn": [
+            "[concat('Microsoft.Web/serverfarms/', variables('hostPlan'))]"
+        ],
+        "properties": {
+          "name": "[variables('siteName')]",
+          "serverFarmId": "[resourceId('Microsoft.Web/serverfarms/', variables('hostPlan'))]"
+        },
+        "resources": [
+   
+        ]
+        
+        
+      }
+    ]
+}
