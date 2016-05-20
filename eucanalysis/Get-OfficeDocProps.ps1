@@ -7,9 +7,9 @@
   
 
   .Example 1
-  import-module .\Get-ComRefs.ps1
+  import-module .\Get-OfficeDocProps.ps1
   dir *.xls|%{$i=0}{@{id=$i++;filepath=$_.FullName}}|Get-ComRefs
-  remove-module Get-Comrefs
+  remove-module Get-OfficeDocProps
 
   .Example 2
    @{id=1;filepath="C:\Users\greepau\Desktop\test.xls"}|Get-ComRefs
@@ -268,7 +268,7 @@ function Get-OfficeDocProps {
 
         ##### REAL BEGINNING #####
         # Excel extentsions to process
-        $xlsExt = ('.xls','.xlsb','.xlsx','.xlsm','.xlt')
+        $oleExt = ('.xls','.xlt','.doc')
         #Access extensions to process
         $mdbExt = ('.mdb','.mde')
 
@@ -301,11 +301,11 @@ function Get-OfficeDocProps {
 
         if ( [string]::IsNullOrEmpty($file.skip) ) {
             $fileExt =  [System.IO.Path]::GetExtension($file.filepath)
-            if ( $xlsExt -match $fileExt ) { 
+            if ( $oleExt -match $fileExt ) { 
                 ProcessExcelFile $file
 
             }
-            elseif ( $ScanMDB -and $xlsExt -match $fileExt ) { 
+            elseif ( $ScanMDB -and $mdbExt -match $fileExt ) { 
                 ProcessAccessFile $file $objAccess
 
                 # Excel instance killed - Recreate
