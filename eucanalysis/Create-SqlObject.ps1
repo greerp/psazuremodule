@@ -1,6 +1,12 @@
 ﻿<#
   .SYNOPSIS
-  Simple SQL Server function to return the results of a query
+  Given a stream of objects, converts to corresponding SQL columns and persists in existing SWQL table
+
+  .PARMETER value (from Pipeline)
+  Object stream of objects to persist in DB
+
+  .PARAMETER tableName
+  Existing SQL tablename
 
   .PARAMETER dataSource
   Host name, corresponds to -s on ISQL
@@ -16,20 +22,16 @@
 
   remove-module Create-SqlObject
   import-module .\Create-SqlObject.ps1
-  dir|Create-SqlObject -tableName test
 
-  $val = Invoke-Sql -sqlCommand "select Forename + ' ' + Surname as name, dob,address from members"
-  foreach ( $row in $val[0].Rows){
-    #Convert to array (Not very useful)
-    $i = $row.ItemArray
+  
+  $loc|%{$p= @{id=[int]$_.fileid;loc=[int]$_.loc};  `
+       new-object psobject -Property $p}| `
+       Create-SqlObject  -tableName "vbaprot" -dataSource "r2gsqlsrv.database.windows.net" -username r2gadmin -password R3dpixie -database redi2go -Verbose
 
-    # Explicitly access row attributes by name
-    write-host "Row:" $row.name $row.address $row.dob
-  }
+  Note:
+  1. You need to pass a proper object stream not a hashtable, if you just pass in @{prpo1=val;prop2=val2} that is a hashtable
+  2. SQL table needs to exist. Make sure object property types are the correct ones (note casting in example)
 
-  .Example 2
-  (Invoke-Sql -sqlCommand "select Forename + ' ' + Surname as name, dob,address from members")[0].Rows|
-  %{write-host $_.name }
 
   #>
 
@@ -62,11 +64,6 @@ function Create-SqlObject {
             return [ref]$table
         }
 
-        
-
-
-
-
         ###########################################################################
         if ( $username  ){
             $connectionString = "Data Source=$dataSource;User Id=$username;Password=$password;Initial Catalog=$database"
@@ -81,7 +78,6 @@ function Create-SqlObject {
         catch {
             throw $_.Exception.Message
         }
-
 
         ###########################################################################
 
@@ -99,14 +95,13 @@ function Create-SqlObject {
 
     process {
         $item = $PSitem
-        
 
         if (  -not $initialized ){
             if ($PSCmdlet.MyInvocation.BoundParameters["Verbose"].IsPresent){
                 Write-Host "Creating table" $tableName
             }
             $initialized = $true
-            $objProps = $item|Get-Member -MemberType Property
+            $objProps = $item|Get-Member -MemberType NoteProperty
             $dataTable = (CreateTable $objProps $tableName).Value
         }
 
