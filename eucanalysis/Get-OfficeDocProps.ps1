@@ -241,6 +241,7 @@ function Get-OfficeDocProps {
                     References = $refs
                     VbaProt    = $null
                     Comment    = ""
+                    Modules    = $vbaProps.Modules
                 }
                 
 
@@ -257,7 +258,9 @@ function Get-OfficeDocProps {
                     Contains   = $false
                     References = $null
                     VbaProt    = $null
-                    Comment    = $msg } 
+                    Comment    = $msg 
+                    Modules    = $null  
+               } 
             }
             finally {
                 if ($wb) { 
