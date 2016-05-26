@@ -8,11 +8,11 @@
 
   .Example 1
   import-module .\Get-OfficeDocProps.ps1
-  dir *.xls|%{$i=0}{@{id=$i++;filepath=$_.FullName}}|Get-ComRefs
+  dir *.xls|%{$i=0}{@{id=$i++;filepath=$_.FullName}}|Get-OfficeDocProps
   remove-module Get-OfficeDocProps
 
   .Example 2
-   @{id=1;filepath="C:\Users\greepau\Desktop\test.xls"}|Get-ComRefs
+   @{id=1;filepath="C:\Users\greepau\Desktop\test.xls"}|Get-OfficeDocProps
   
   .Example 3
   $d = dir *.xls
@@ -83,7 +83,6 @@ function Get-OfficeDocProps {
 
             $vbaWb.Close($false)
 
-
             return
         }
 #>
@@ -111,6 +110,7 @@ function Get-OfficeDocProps {
         }
 
         ###########################################################################
+<#
         Function Get-StringHash([String] $String,$HashName = "MD5")
         {
             $StringBuilder = New-Object System.Text.StringBuilder
@@ -119,8 +119,9 @@ function Get-OfficeDocProps {
             }
             $StringBuilder.ToString()
         }
-
+#>
         ###########################################################################
+<#
         function getLateBoundObjects($source) {
 
             $lateBoundObjects =[System.Collections.arrayList]@()
@@ -161,6 +162,36 @@ function Get-OfficeDocProps {
                 
             }
             return $lateBoundObjects
+        }
+#>
+
+        ###########################################################################
+        function getComAttributes($clsid){
+            
+            $foundCls = $false
+            $regPaths = @("HKLM\SOFTWARE\Classes\Wow6432Node\CLSID\","HKLM:\SOFTWARE\CLASSES\CLSID\")
+            $name = $null
+            $server = $null
+
+            foreach ( $clsRoot in $regPaths){
+                $tryPath = "${clsRoot}${clsId}"
+                if (($foundCls -eq $false) -and (Test-Path $tryPath) ) {
+                    $name = (Get-ItemProperty $tryPath)."(default)"
+
+                    $tryPath = "${clsRoot}${clsId}\InProcServer32"
+                    if (Test-Path $tryPath){
+                        $server = (Get-ItemProperty $tryPath)."(default)"
+                    }
+                    else {
+                        $tryPath = "${clsRoot}${clsId}\LocalServer32"
+                        if (Test-Path $tryPath){
+                            $server = (Get-ItemProperty $tryPath)."(default)"
+                        }
+                    }
+                    $foundCls = $true                    
+                }
+            }
+            return @{name=$name;inprocserver32=$inprocserver32}
         }
 
         ###########################################################################
@@ -217,13 +248,29 @@ function Get-OfficeDocProps {
                     # Add the late bound progids
 
                     foreach ($ref in $vbaProps.LateBoundReferences.GetEnumerator()) {
+
+                        $ComName = $null
+                        $Guid = $null
+                        $IsBroken = $true
+
+                        # Get COM info for ProgID
+                        $type = [System.Type]::GetTypeFromProgID($ref.Key, $false)
+
+                        if ( $type -ne $null ) {
+                            $comAttr = getComAttributes $type.Guid
+                            $comName = $comAttr.Name
+                            $comPath = $comAttr.Inprocserver32
+                            $Guid = $type.Guid
+                            $IsBroken = $false
+                        }
+
                         $fileRefProps = @{
-                            ComName    = $null
+                            ComName    = $ComName
                             ProgId     = $ref.Key
-                            Guid       = $null
+                            Guid       = $Guid
                             ComPath    = $null
-                            BuiltIn    = $null
-                            IsBroken   = $null
+                            BuiltIn    = $false
+                            IsBroken   = $IsBroken
                             LateBound  = $true
                             RefCount   = $ref.Value
                         }
@@ -271,9 +318,9 @@ function Get-OfficeDocProps {
 
         ##### REAL BEGINNING #####
         # Excel extentsions to process
-        $oleExt = ('.xls','.xlt','.doc')
+        $oleExt = ('.xls','.xlt','.doc','.xlsm')
         #Access extensions to process
-        $mdbExt = ('.mdb','.mde')
+        $mdbExt = ('.mdb')
 
 
         if ($PSCmdlet.MyInvocation.BoundParameters["Verbose"].IsPresent){
@@ -286,8 +333,6 @@ function Get-OfficeDocProps {
         if ( $ScanMDB ) {
             $objAccess = GetAccessInstance
         }
-
-
     }
 
     ###########################################################################
