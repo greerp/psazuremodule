@@ -53,7 +53,7 @@ function Create-SqlObject {
             #$members = $obj|Get-Member -MemberType Property
             foreach ( $prop in $objProps ){
                 $col = new-object System.Data.DataColumn
-                $col.DataType = $prop.TypeName.GetType()
+                $col.DataType = $prop.Type
                 $col.ColumnName = $prop.Name
                 $table.Columns.Add($col)
             }
@@ -101,7 +101,13 @@ function Create-SqlObject {
                 Write-Host "Creating table" $tableName
             }
             $initialized = $true
-            $objProps = $item|Get-Member -MemberType NoteProperty
+
+            
+            $objProps = $item|Get-Member -MemberType NoteProperty| `
+                              %{$p=$_;New-Object psobject -Property @{Name=$p.Name; Type=$item.($p.Name).GetType()} }
+
+
+#            $objProps = $item|Get-Member -MemberType NoteProperty 
             $dataTable = (CreateTable $objProps $tableName).Value
         }
 
@@ -127,6 +133,13 @@ function Create-SqlObject {
 
         $bulkCopy = New-Object System.Data.SqlClient.SqlBulkCopy($connection)
         $bulkCopy.DestinationTableName = $tableName
+
+        foreach ($prop in $objProps){
+            $columnMap = New-Object `
+                System.Data.SqlClient.SqlBulkCopyColumnMapping($prop.Name, $prop.Name)
+            $bulkCopy.ColumnMappings.Add($columnMap)
+        }
+
         $bulkCopy.WriteToServer($dataTable)
         $connection.Close()
     }
