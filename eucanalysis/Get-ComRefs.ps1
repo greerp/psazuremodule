@@ -12,7 +12,7 @@
   remove-module Get-Comrefs
 
   .Example 2
-  @{id=1;filepath="C:\Users\greepau\Desktop\Order Log Monthly_Template.xls"}|Get-ComRefs
+  @{id=1;filepath="C:\Users\greepau\Desktop\test.xls"}|Get-ComRefs
 
   .Example 3
   $d = dir *.xls
@@ -130,15 +130,37 @@ function Get-ComRefs {
         }
 
         ###########################################################################
+        function ExcelChartCount($wb) {
+            $chartCount = 0
+
+            foreach ( $ws in $wb.worksheets ){
+                $charts = $ws.ChartObjects()
+                if ( $charts -ne $null  ){
+                    $chartCount+=$charts.Count
+                }    
+            }
+            return $chartCount
+        }
+        ###########################################################################
+        function ExcelLinkCount($wb) {
+            $linkCount = 0
+
+            foreach ( $link in $wb.LinkSources(1) ){
+                $linkCount++
+            }
+            return $linkCount
+        }
+
+
+        ###########################################################################
         function getLateBoundObjects($source) {
 
-            $lateBoundObjects =[System.Collections.arrayList]@()
-            #$lateBoundObjects =@()
+            $lateBoundObjects =[System.Collections.hashtable]@{}
             # regex Expr, note ?<progid> which names the group
-            #$regexComRef = "CreateObject\([`"'](?<progid>[\w\.]+)[`"']\)"
             $regexComRef = "(?:Create|Get)Object\([`"'](?<progid>[\w\.]+)[`"']\)"
 
-            # Use Select String to do multiple macthes in a string, pick out the group value which is denoted in the regex by \w+.\w+
+            # Use Select String to do multiple macthes in a string, pick out the group
+            # value which is denoted in the regex by \w+.\w+
             $progids = select-string -inputObject $source -Pattern $regexComRef -AllMatches | 
                 % { $_.Matches } | 
                 % { $_.Groups['progid'].Value }
@@ -157,24 +179,59 @@ function Get-ComRefs {
                 }
 
                 if ( $type -ne $null ) {
+                            $comAttr = getComAttributes $type.Guid
+                            $comName = $comAttr.Name
+                            $comPath = $comAttr.Inprocserver32
+
                     $fileRefProps.ComName = $type.FullName
                     $filerefProps.Guid = $type.Guid
                     $fileRefProps.IsBroken = $false
                 }
-                #$obj = New-Object psobject -Property $fileRefProps
-                #$lateBoundObjects+=$obj
+                $comRef = New-Object psobject -Property $fileRefProps
 
-
-                [void]$lateBoundObjects.Add(
-                    (New-Object psobject -Property $fileRefProps))
+                if ( $lateBoundObjects.Contains($progid) -ne $false) {
+                    [void]$lateBoundObjects.Add($progid,$comRef)
+                }
                 
             }
-            return $lateBoundObjects
+            return $lateBoundObjects.Values
+        }
+
+        ###########################################################################
+        function getComAttributes($clsid){
+            
+            $foundCls = $false
+            $regPaths = @("HKLM\SOFTWARE\Classes\Wow6432Node\CLSID\","HKLM:\SOFTWARE\CLASSES\CLSID\")
+            $name = $null
+            $server = $null
+
+            foreach ( $clsRoot in $regPaths){
+                $tryPath = "${clsRoot}${clsId}"
+                if (($foundCls -eq $false) -and (Test-Path $tryPath) ) {
+                    $name = (Get-ItemProperty $tryPath)."(default)"
+
+                    $tryPath = "${clsRoot}${clsId}\InProcServer32"
+                    if (Test-Path $tryPath){
+                        $server = (Get-ItemProperty $tryPath)."(default)"
+                    }
+                    else {
+                        $tryPath = "${clsRoot}${clsId}\LocalServer32"
+                        if (Test-Path $tryPath){
+                            $server = (Get-ItemProperty $tryPath)."(default)"
+                        }
+                    }
+                    $foundCls = $true                    
+                }
+            }
+            return @{name=$name;inprocserver32=$inprocserver32}
         }
 
         ###########################################################################
         function ProcessExcelFile($file, $objExcel) {
             $wb=$null
+            $chartCount = 0
+            $AXCount = 0
+            $linkCount = 0 
             try {
                 if ( -not (test-Path $file.filepath) ){
                     throw [System.IO.FileNotFoundException] "File Missing"
@@ -188,6 +245,9 @@ function Get-ComRefs {
                 $refs=[System.Collections.arrayList]@()
                 $hash=""
                 $vbaProt = $null
+
+                $chartCount = ExcelChartCount $wb
+                $linkCount = ExcelLinkCount $wb
 
                 if ($wb.HasVBProject) {
                     $vba = $wb.VBProject
@@ -206,6 +266,9 @@ function Get-ComRefs {
                             IsBroken   = $vbaRef.IsBroken
                             LateBound  = $false
                         }
+                        if ( $vbaRef.BuiltIn -eq $false){
+                            $AXCount++
+                        } 
                         [void]$refs.Add((New-Object psobject -Property $fileRefProps))
                     }
                     
@@ -226,6 +289,7 @@ function Get-ComRefs {
                                 # Scan Code for COM Refs
                                 $lateRefList = @(getLateBoundObjects $code)
                                 if ( $lateRefList.Count -gt 0){
+                                    $AXCount+=$lateRefList.Count
                                     foreach($lateRef in $lateRefList){
                                         [void]$refs.Add($lateRef)
                                     }
@@ -246,7 +310,6 @@ function Get-ComRefs {
                     if ( $moduleHashes -ne "" ) {
                         $hash = (Get-StringHash -String $moduleHashes)
                     }
-
                 }
 
                 $fileRefProps = @{
@@ -257,10 +320,11 @@ function Get-ComRefs {
                     Contains   = $containsToken
                     References = $refs
                     VbaProt    = $vbaProt
+                    ChartCount = $chartCount
+                    AXCount    = $AXCount
+                    LinkCount  = $LinkCount
                     Comment    = ""
                 }
-                
-
                 New-Object psobject -Property $fileRefProps
             }
             catch {
@@ -270,10 +334,13 @@ function Get-ComRefs {
                     FileId     = $file.fileid
                     FileName   = $file.filepath
                     Loc        = $null
-                    CodeHash  = $null
+                    CodeHash   = $null
                     Contains   = $false
                     References = $null
                     VbaProt    = $null
+                    ChartCount = $null
+                    AXCount    = $null
+                    LinkCount  = $null
                     Comment    = $msg } 
             }
             finally {
@@ -307,10 +374,6 @@ function Get-ComRefs {
         $file = @{
             fileid=$value.id;
             filepath=$value.filepath}
-
-        [Reflection.Assembly]::LoadFile("${PSScriptRoot}\euclib.dll")
-        $vbaProps = [com.redpixie.euc.mcdf.PsWrapper]::GetDocumentProperties($file.filepath)
-
 
         $count++;
 
@@ -348,10 +411,10 @@ function Get-ComRefs {
             Write-host "Terminating"
         }
         $objExcel.Quit()
-        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($objExcel)
+        [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($objExcel)
         if ( $ScanMDB -and $objAccess.Application -eq $null) {
             $objAccess.Quit()
-            [System.Runtime.InteropServices.Marshal]::ReleaseComObject($objAccess)
+            [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($objAccess)
         }
     }
 }
