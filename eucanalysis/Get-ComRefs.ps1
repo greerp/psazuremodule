@@ -179,9 +179,9 @@ function Get-ComRefs {
                 }
 
                 if ( $type -ne $null ) {
-                            $comAttr = getComAttributes $type.Guid
-                            $comName = $comAttr.Name
-                            $comPath = $comAttr.Inprocserver32
+                    $comAttr = getComAttributes $type.Guid
+                    $comName = $comAttr.Name
+                    $comPath = $comAttr.Inprocserver32
 
                     $fileRefProps.ComName = $type.FullName
                     $filerefProps.Guid = $type.Guid
@@ -227,18 +227,92 @@ function Get-ComRefs {
         }
 
         ###########################################################################
+        function getDocumentProperties($wb){
+
+            $binding = “System.Reflection.BindingFlags” -as [type]
+            $objHash = @{}
+
+            Foreach($property in $wb.BuiltInDocumentProperties) {
+                try {
+                    $propName = [System.__ComObject].invokemember("name",$binding::GetProperty,$null,$property,$null)
+                    $propValue = [System.__ComObject].invokemember("value",$binding::GetProperty,$null,$property,$null)
+                    [void]$objHash.Add($propName,$propValue)
+                }
+                catch { }
+            }
+            return $objHash
+        }
+
+        ###########################################################################
+        function ProcessAccessFile($file, $objAccess) {
+            $fileObj = Get-Item -Path $file.filepath
+            $fileProps.Add("Owner", (Get-Acl -Path $file.filepath).Owner )
+            $fileProps.Add("Size", $fileObj.Length)
+            $fileProps.Add("Created", $fileObj.CreationTime)
+            $fileProps.Add("Updated", $fileObj.LastWriteTime)
+
+            $fileOwner=$null
+            $fileProps=@{}
+
+
+            $fileRefProps = @{
+                FileId         = $file.fileid
+                FileName       = split-path $file.filepath -Leaf
+                Directory      = split-path $file.filepath
+                Loc            = $null
+                CodeHash       = $null
+                Contains       = $null
+                References     = $refs
+                VbaProt        = $null
+                ChartCount     = $null
+                AXCount        = $null
+                LinkCount      = $null
+                Owner          = $fileProps["Owner"]
+                Size           = $fileProps["Size"]
+                Created        = $fileProps["Created"]
+                Updated        = $fileProps["Updated"]
+                Comment    = ""
+            }
+            New-Object psobject -Property $fileRefProps
+        }
+
+
+        ###########################################################################
         function ProcessExcelFile($file, $objExcel) {
             $wb=$null
             $chartCount = 0
             $AXCount = 0
             $linkCount = 0 
+            $docProps = @{}
+            $fileOwner=$null
+            $fileProps=@{}
+            $filePwd = $false
             try {
                 if ( -not (test-Path $file.filepath) ){
                     throw [System.IO.FileNotFoundException] "File Missing"
                 }
 
+                $fileObj = Get-Item -Path $file.filepath
+                $fileProps.Add("Owner", (Get-Acl -Path $file.filepath).Owner )
+                $fileProps.Add("Size", $fileObj.Length)
+                $fileProps.Add("Created", $fileObj.CreationTime)
+                $fileProps.Add("Updated", $fileObj.LastWriteTime)
+                
+
                 # Specify password so that if the file has one, it causes an exception rather than prompt
-                $wb = $objExcel.WorkBooks.Open($file.filepath, 0, $true, 2, "BlahBlaBlah")
+                try {
+                    $wb = $objExcel.WorkBooks.Open($file.filepath, 0, $true, 2, "BlahBlaBlah")
+                }
+                catch {
+                    $ex = $_
+                    if ( $ex.Exception.Errorcode -eq -2146827284 ){
+                        $filePwd = $true
+                    }
+                    else {
+                        throw $ex
+                    }
+                }
+
 
                 # Initialisers for output object 
                 $containsToken=$False
@@ -253,13 +327,18 @@ function Get-ComRefs {
                     $vba = $wb.VBProject
                     $vbaProt=$vba.Protection
 
-
                     ###########################################
                     #Scan Tightly Bound References
                     foreach ( $vbaRef in $vba.References ){
+                        if ( $vbaRef.Guid ) {
+                            $progid  = (GetProgId $vbaRef.Guid).progid
+                        }
+                        else {
+                            $progid=$null
+                        }
                         $fileRefProps = @{
                             ComName    = $vbaRef.Name
-                            ProgId     = $null
+                            ProgId     = $progid
                             Guid       = $vbaRef.Guid
                             ComPath    = $vbaRef.FullPath
                             BuiltIn    = $vbaRef.BuiltIn
@@ -313,16 +392,22 @@ function Get-ComRefs {
                 }
 
                 $fileRefProps = @{
-                    FileId     = $file.fileid
-                    FileName   = $file.filepath
-                    Loc        = $totLoc
-                    CodeHash   = $hash
-                    Contains   = $containsToken
-                    References = $refs
-                    VbaProt    = $vbaProt
-                    ChartCount = $chartCount
-                    AXCount    = $AXCount
-                    LinkCount  = $LinkCount
+                    FileId         = $file.fileid
+                    FileName       = split-path $file.filepath -Leaf
+                    Directory      = split-path $file.filepath
+                    Loc            = $totLoc
+                    CodeHash       = $hash
+                    Contains       = $containsToken
+                    References     = $refs
+                    VbaProt        = $vbaProt
+                    ChartCount     = $chartCount
+                    AXCount        = $AXCount
+                    LinkCount      = $LinkCount
+                    Owner          = $fileProps["Owner"]
+                    Size           = $fileProps["Size"]
+                    Created        = $fileProps["Created"]
+                    Updated        = $fileProps["Updated"]
+                    FilePwd        = $filePwd
                     Comment    = ""
                 }
                 New-Object psobject -Property $fileRefProps
@@ -332,7 +417,8 @@ function Get-ComRefs {
                 $msg = $_ -replace '[\n]',' '
                 New-Object psobject -Property @{
                     FileId     = $file.fileid
-                    FileName   = $file.filepath
+                    FileName   = split-path $file.filepath -Leaf
+                    Directory  = split-path $file.filepath
                     Loc        = $null
                     CodeHash   = $null
                     Contains   = $false
@@ -341,7 +427,13 @@ function Get-ComRefs {
                     ChartCount = $null
                     AXCount    = $null
                     LinkCount  = $null
-                    Comment    = $msg } 
+                    Owner      = $fileProps["Owner"]
+                    Size       = $fileProps["Size"]
+                    Created    = $fileProps["Created"]
+                    Updated    = $fileProps["Updated"]
+                    FilePwd    = $filePwd
+                    Comment    = $msg 
+                    } 
             }
             finally {
                 if ($wb) { 
@@ -354,12 +446,14 @@ function Get-ComRefs {
         # Excel extentsions to process
         $xlsExt = ('.xls','.xlsb','.xlsx','.xlsm','.xlt')
         #Access extensions to process
-        $mdbExt = ('.mdb','.mde')
+        $mdbExt = ('.mdb')
 
 
         if ($PSCmdlet.MyInvocation.BoundParameters["Verbose"].IsPresent){
             Write-Host "Initialising...."
         }
+        # Load GetProgId function 
+        . .\GetProgid.ps1
         $objExcel = getExcelInstance
         $count = 0
         if ( $ScanMDB ) {
@@ -383,7 +477,10 @@ function Get-ComRefs {
 
         if ( [string]::IsNullOrEmpty($file.skip) ) {
             $fileExt =  [System.IO.Path]::GetExtension($file.filepath)
-            if ( $xlsExt -match $fileExt ) { 
+            if ( $fileExt -eq "" ){
+                # Skip
+            }
+            elseif ( $xlsExt -match $fileExt ) { 
                 ProcessExcelFile $file $objExcel
 
                 # Excel instance killed - Recreate
@@ -395,8 +492,8 @@ function Get-ComRefs {
                 ProcessAccessFile $file $objAccess
 
                 # Excel instance killed - Recreate
-                if ($objExcel.Application -eq $null ){
-                    $objExcel = getExcelInstance
+                if ($objAccess.Application -eq $null ){
+                    $objAccess = getAccessInstance
                 }
             }
         }
