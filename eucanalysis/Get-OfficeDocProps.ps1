@@ -109,61 +109,6 @@ function Get-OfficeDocProps {
             return $objAccess
         }
 
-        ###########################################################################
-<#
-        Function Get-StringHash([String] $String,$HashName = "MD5")
-        {
-            $StringBuilder = New-Object System.Text.StringBuilder
-            [System.Security.Cryptography.HashAlgorithm]::Create($HashName).ComputeHash([System.Text.Encoding]::UTF8.GetBytes($String))|%{
-                [Void]$StringBuilder.Append($_.ToString("x2"))
-            }
-            $StringBuilder.ToString()
-        }
-#>
-        ###########################################################################
-<#
-        function getLateBoundObjects($source) {
-
-            $lateBoundObjects =[System.Collections.arrayList]@()
-            #$lateBoundObjects =@()
-            # regex Expr, note ?<progid> which names the group
-            #$regexComRef = "CreateObject\([`"'](?<progid>[\w\.]+)[`"']\)"
-            $regexComRef = "(?:Create|Get)Object\([`"'](?<progid>[\w\.]+)[`"']\)"
-
-            # Use Select String to do multiple macthes in a string, pick out the group value which is denoted in the regex by \w+.\w+
-            $progids = select-string -inputObject $source -Pattern $regexComRef -AllMatches | 
-                % { $_.Matches } | 
-                % { $_.Groups['progid'].Value }
-
-            foreach ( $progid in $progids ){
-                $type = [System.Type]::GetTypeFromProgID($progid, $false)
-
-                $fileRefProps = @{
-                    ComName    = $null
-                    ProgId     = $progid
-                    Guid       = $null
-                    ComPath    = $null
-                    BuiltIn    = $false
-                    IsBroken   = $true
-                    LateBound  = $True
-                }
-
-                if ( $type -ne $null ) {
-                    $fileRefProps.ComName = $type.FullName
-                    $filerefProps.Guid = $type.Guid
-                    $fileRefProps.IsBroken = $false
-                }
-                #$obj = New-Object psobject -Property $fileRefProps
-                #$lateBoundObjects+=$obj
-
-
-                [void]$lateBoundObjects.Add(
-                    (New-Object psobject -Property $fileRefProps))
-                
-            }
-            return $lateBoundObjects
-        }
-#>
 
         ###########################################################################
         function getComAttributes($clsid){
@@ -268,7 +213,7 @@ function Get-OfficeDocProps {
                             ComName    = $ComName
                             ProgId     = $ref.Key
                             Guid       = $Guid
-                            ComPath    = $null
+                            ComPath    = $ComPath
                             BuiltIn    = $false
                             IsBroken   = $IsBroken
                             LateBound  = $true
