@@ -1,4 +1,22 @@
-﻿function Get-TypeLib {
+﻿<#
+  .SYNOPSIS
+  Accepts pipeline of TypeLib Guid Strings and looks them up in the registry and then checks existence of file 
+
+  .PARAMETER input
+  Pipeline Strings with GUID string 
+  
+
+  .Example 1
+  remove-module Get-TypeLib
+  import-module .\Get-TypeLib.ps1
+  $guids = import-csv -path mypath\myfile.csv
+  $guids|%{@($_.guid)}|Get-TypeLib
+
+  .Notes
+
+#>
+
+function Get-TypeLib {
     param (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)] $value
 
