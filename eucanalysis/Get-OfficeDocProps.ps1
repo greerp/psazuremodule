@@ -165,7 +165,7 @@ function Get-OfficeDocProps {
                             Guid       = $vbaRef.Guid
                             ComPath    = $vbaRef.Path
                             BuiltIn    = $null
-                            IsBroken   = $null
+                            IsBroken   = $vbaRef.IsBroken
                             LateBound  = $false
                             RefCount   = $null
                         }
