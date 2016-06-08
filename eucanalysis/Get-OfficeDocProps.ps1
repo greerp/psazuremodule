@@ -109,34 +109,58 @@ function Get-OfficeDocProps {
             return $objAccess
         }
 
+        ###########################################################################
+        Function GetComAttributesFromProgId($progid){
+            # Get COM info for ProgID
+            $type = [System.Type]::GetTypeFromProgID($progid, $false)
+            $guid = ""
+
+            if ( $type -ne $null ) {
+                $guid = $type.guid
+                $comAttr = GetComAttributesFromClsId $guid
+            }
+            else {
+                $comAttr = @{name=""; compath=""}
+            }
+
+            return new-object psobject -Property @{
+                guid     = $guid
+                name     = $comAttr.name
+                compath  = $comAttr.compath
+                progid   = $progid
+                isbroken =  ($comAttr.name -eq "")
+            }
+        }
 
         ###########################################################################
-        function getComAttributes($clsid){
+        function GetComAttributesFromClsId([Guid]$clsid){
             
             $foundCls = $false
-            $regPaths = @("HKLM\SOFTWARE\Classes\Wow6432Node\CLSID\","HKLM:\SOFTWARE\CLASSES\CLSID\")
-            $name = $null
-            $server = $null
+            $name     = $null
+            $server   = $null
+            $inproc
+
+            $regPaths = @("HKLM:\SOFTWARE\Classes\Wow6432Node\CLSID\", `
+                          "HKLM:\SOFTWARE\CLASSES\CLSID\")
+
 
             foreach ( $clsRoot in $regPaths){
-                $tryPath = "${clsRoot}${clsId}"
-                if (($foundCls -eq $false) -and (Test-Path $tryPath) ) {
-                    $name = (Get-ItemProperty $tryPath)."(default)"
+                $rootPath = "${clsRoot}{${clsId}}"
+                if (($foundCls -eq $false) -and (Test-Path $rootPath) ) {
+                    $name = (Get-ItemProperty $rootPath)."(default)"
 
-                    $tryPath = "${clsRoot}${clsId}\InProcServer32"
+                    $tryPath = "${rootPath}\InProcServer32"
+                    if (Test-Path $tryPath){
+                        $inproc = (Get-ItemProperty $tryPath)."(default)"
+                    }
+                    $tryPath = "${rootPath}\LocalServer32"
                     if (Test-Path $tryPath){
                         $server = (Get-ItemProperty $tryPath)."(default)"
-                    }
-                    else {
-                        $tryPath = "${clsRoot}${clsId}\LocalServer32"
-                        if (Test-Path $tryPath){
-                            $server = (Get-ItemProperty $tryPath)."(default)"
-                        }
                     }
                     $foundCls = $true                    
                 }
             }
-            return @{name=$name;inprocserver32=$inprocserver32}
+            return @{name=$name;compath=($server,$inproc -ne $null)[0]}
         }
 
         ###########################################################################
@@ -194,20 +218,12 @@ function Get-OfficeDocProps {
 
                     foreach ($ref in $vbaProps.LateBoundReferences.GetEnumerator()) {
 
-                        $ComName = $null
-                        $Guid = $null
-                        $IsBroken = $true
-
                         # Get COM info for ProgID
-                        $type = [System.Type]::GetTypeFromProgID($ref.Key, $false)
-
-                        if ( $type -ne $null ) {
-                            $comAttr = getComAttributes $type.Guid
-                            $comName = $comAttr.Name
-                            $comPath = $comAttr.Inprocserver32
-                            $Guid = $type.Guid
-                            $IsBroken = $false
-                        }
+                        $ComAttr  = GetComAttributesFromProgId $ref.Key
+                        $ComName  = $comAttr.name
+                        $ComPath  = $comAttr.compath
+                        $Guid     = $comAttr.guid
+                        $IsBroken = $comAttr.isbroken
 
                         $fileRefProps = @{
                             ComName    = $ComName
