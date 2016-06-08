@@ -93,8 +93,8 @@ function Get-ComRefs {
                 Write-Host "Creating instance of Excel for automation"
             }
             $objExcel = New-Object -ComObject Excel.Application
-            #$objExcel.DisplayAlerts = $False
-            #$objExcel.EnableEvents  = $False
+            $objExcel.DisplayAlerts = $False
+            $objExcel.EnableEvents  = $False
             $objExcel.Interactive   = $True
             try {
                 $objExcel.AutomationSecurity = 
@@ -422,7 +422,7 @@ function Get-ComRefs {
                     Loc        = $null
                     CodeHash   = $null
                     Contains   = $false
-                    References = $null
+                    References = [System.Collections.arrayList]@()
                     VbaProt    = $null
                     ChartCount = $null
                     AXCount    = $null
