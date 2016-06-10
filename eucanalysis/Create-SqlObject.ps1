@@ -29,7 +29,8 @@
        Create-SqlObject  -tableName "vbaprot" -dataSource "r2gsqlsrv.database.windows.net" -username r2gadmin -password R3dpixie -database redi2go -Verbose
 
   Note:
-  1. You need to pass a proper object stream not a hashtable, if you just pass in @{prpo1=val;prop2=val2} that is a hashtable
+  1. You need to pass a proper object stream not a hashtable, 
+      if you just pass in @{prpo1=val;prop2=val2} that is a hashtable
   2. SQL table needs to exist. Make sure object property types are the correct ones (note casting in example)
 
 
@@ -131,16 +132,26 @@ function Create-SqlObject {
 
     end {
 
+        if ($PSCmdlet.MyInvocation.BoundParameters["Verbose"].IsPresent){
+            $rowCount = $dataTable.rows.count
+            if ( ($rowCount -eq 0) -and ($objProps -eq $null)) {
+                Write-Host "Noting to write - did you pass a psobject in?"
+            }
+            else {
+                Write-Host "Writing to $rowCount rows to server"
+            }
+        }
         $bulkCopy = New-Object System.Data.SqlClient.SqlBulkCopy($connection)
         $bulkCopy.DestinationTableName = $tableName
 
         foreach ($prop in $objProps){
             $columnMap = New-Object `
                 System.Data.SqlClient.SqlBulkCopyColumnMapping($prop.Name, $prop.Name)
-            $bulkCopy.ColumnMappings.Add($columnMap)
+            [void]$bulkCopy.ColumnMappings.Add($columnMap)
         }
 
         $bulkCopy.WriteToServer($dataTable)
         $connection.Close()
     }
 }
+                                                                                                                                                                      
