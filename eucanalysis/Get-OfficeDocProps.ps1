@@ -50,7 +50,8 @@
 function Get-OfficeDocProps {
     param (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)] $value, 
-        [parameter(Mandatory=$false)][bool]$ScanMDB=$False
+        [parameter(Mandatory=$false)][bool]$ScanMDB=$False,
+        [parameter(Mandatory=$false)][String[]]$Contains
 
     )
   
@@ -179,6 +180,7 @@ function Get-OfficeDocProps {
                 if ($vbaProps.TotLoc -gt 0 ) {
                     $hash = $vbaProps.ModuleHash
                     $totLoc = $vbaProps.TotLoc
+                    $containsToken = $False;
 
                     ###########################################
                     #Scan Tightly Bound References
