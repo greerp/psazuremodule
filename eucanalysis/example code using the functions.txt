@@ -1,0 +1,465 @@
+remove-module Invoke-SQL
+import-module .\Invoke-SQL.ps1
+
+
+remove-module Get-ComRefs
+Import-Module .\Get-ComRefs.ps1 
+
+remove-module Get-OfficeDocProps
+Import-Module .\Get-OfficeDocProps.ps1 
+
+remove-module Create-SqlObject
+import-module .\Create-SqlObject.ps1
+
+
+
+#(Invoke-SQL -dataSource "LLUCSAPP245P" -database "OfficeScanDB" `
+#    -username "lsa_rbc_office2010" -password "Welcome001" `
+#    -sqlCommand "select top 10 fileid, filepath+filename as filepath from euc_files where basefolder='Malaysia' and Loc `> 0 ")[0].Rows|
+#%{@{id=$_.fileid;filepath=$_.filepath}}|
+#Get-ComRefs|
+#%{write-host "File:" $_.fileid ", Loc:" $_.Loc ", Hash:" $_.Codehash "}
+
+
+#(Invoke-SQL -dataSource "LLUCSAPP245P" -database "OfficeScanDB" `
+#    -username "lsa_rbc_office2010" -password "Welcome001" `
+#    -sqlCommand "select top 10 fileid, filepath+filename as filepath from euc_files where basefolder='Malaysia' and Loc `> 0 ")[0].Rows|
+#%{@{id=$_.fileid;filepath=$_.filepath}}|
+#Get-ComRefs|
+#%{ @{id=$_.fileid;loc=$_.Loc;hash=$_.CodeHash}|export-csv -path "output.csv" -append -NoTypeInformation -force}
+
+$sqlQuery = "select fileid, filepath+filename as filepath from euc_files where hasvba='Yes' and loc is null and filetype not in ('.mdb','.mde')"
+
+$sqlQuery = "select fileid, filepath+filename as filepath from euc_files where hasactivex='No' and loc>0 and filetype not in ('.mdb','.mde')"
+
+
+$sqlquery = "select fileid, filepath+filename as filepath from eucinventory where loc > 0 and filetype in ('.xlsm','.xls','.doc','.xlt') and not exists ( select 1 from allrefs a where a.fileid = eucinventory.fileid)"
+
+$sqlquery = "select fileid, filepath+filename as filepath from eucinventory where newragstatus is null and haspasswords='Yes'"
+
+ 
+$sqlQuery = "select fileid, filepath+filename as filepath  from eucinventory where basefolder='Switzerland'"
+
+$sqlQuery = "select fileid, filepath+filename as filepath  from eucinventory where hasvba='Yes' and (LOC=0 or Loc is null)"
+
+$sqlQuery = "select fileid, filepath+filename as filepath  from eucinventory where fileid in (197753, 197756, 197757)"
+
+
+$sqlQuery = "select fileid, filepath+filename as filepath from euc_files where Loc `> 0 "
+$sqlQuery = "select fileid,filepath+filename as filepath from euc_files where basefolder = 'Malaysia' and userragstatus='AMBER' and hash is  null and hasvba='Yes' and filetype != '.mdb'"
+
+$sqlQuery = "select fileid,filepath+filename as filepath from eucinventory where newragstatus in ('RED','AMBER') and (teststatus is null or teststatus='NOK')"
+
+
+
+#$sqlQuery = "select fileid, filepath+filename as filepath  from euc_files where hasVBA='Yes' and not basefolder in ('Malaysia') and loc is null"
+$sqlQuery = "select fileid, filepath+filename as filepath from euc_files where hasVBA='Yes' and loc is null and filetype in ('.xls','.doc','.xlt')"
+
+
+$files = (Invoke-SQL -dataSource "LLUCSAPP245P" -database "OfficeScanDB" -username "lsa_rbc_office2010" -password "Welcome001" -sqlCommand $sqlQuery)[0].Rows
+
+$result = $files|%{@{id=$_.fileid;filepath=$_.filepath}}|Get-OfficeDocProps -verbose
+
+$result = $files|%{@{id=$_.fileid;filepath=$_.filepath}}|Get-OfficeDocProps -verbose
+
+
+#$outfile = "missing-hashes.csv"
+##del $outfile -Force
+#foreach ( $item in $result ){
+#    New-Object psobject -Property @{
+#        FileId     = $item.fileid
+#        Loc        = $item.Loc
+#        Contains   = $item.CodeHash
+#        Comment    = $item.Comment } | export-csv -Path $outfile -append -NoTypeInformation -force
+#}    
+
+
+
+$outfile = "allrefs.csv"
+#del $outfile -Force
+foreach ( $item in $result ){
+    foreach ( $ref in $item.References ) {
+
+        if ($ref.LateBound -eq $true ){
+            write-host "Found Ref:" $ref.ProgId
+            New-Object psobject -Property @{
+                FileId     = $item.fileid
+                ProgId     = $ref.ProgId
+                Comment    = $item.Comment } | export-csv -Path $outfile -append -NoTypeInformation -force
+        }
+    }
+}    
+
+$outfile = "vbaprot-eb-refs.csv"
+foreach ( $item in $result ){
+    foreach ( $ref in $item.References ) {
+
+        if ($ref.LateBound -eq $false ){
+            New-Object psobject -Property @{
+                FileId     = $item.fileid
+                ComName    = $ref.ComName
+                ComPath    = $ref.ComPath
+                Guid       = $ref.Guid
+                Comment    = $item.Comment } | export-csv -Path $outfile -append -NoTypeInformation -force
+        }
+    }
+} 
+
+
+
+$outfile = "luxvbaprot.csv"
+
+foreach ( $item in $result ){
+   if ( $item.vbaprot -eq 1 ) {
+        New-Object psobject -Property @{
+            FileId     = $item.FileId
+            Loc        = $item.loc
+            VBAProt    = $item.VBAProt
+            Comment    = $item.Comment
+        } | export-csv -Path $outfile -append -NoTypeInformation -force
+    }
+}  
+
+$outfile = "vbaprot-new1.csv"
+
+foreach ( $item in $result ){
+    New-Object psobject -Property @{
+        FileId     = $item.FileId
+        Loc        = $item.loc
+        Hash       = $item.CodeHash
+    } | export-csv -Path $outfile -append -NoTypeInformation -force
+}  
+
+
+
+
+
+remove-module Create-SqlObject
+import-module .\Create-SqlObject.ps1
+
+$loc = import-csv -path .\vbaprot-new.csv   
+
+
+# Read New Files and write to filescan table
+$d = dir '\\bil\shares\RBC_DISB\MIGRATION_OFFICE2010\Luxembourg\FS - Client ops Europe' -recurse
+$d = dir '\\bil\shares\RBC_DISB\MIGRATION_OFFICE2010\Luxembourg\DSD PRICINGMDF' -recurse
+
+$result = $d|%{$i=3000}{@{id=$i++;filepath=$_.FullName}}|Get-ComRefs -Verbose
+
+
+$x = $result|`
+%{$p= @{fileid=[int]$_.fileid;`
+        filename=[string]$_.filename;`
+        directory=[string]$_.directory;`
+        size=[int]$_.size;`
+        owner=[string]$_.owner;`
+        created=[datetime]$_.created;`
+        updated=[datetime]$_.updated;`
+        hash=[string]$_.CodeHash;`
+        loc=[int]$_.loc; `
+        axcount=[int]$_.axcount;`
+        chartcount=[int]$_.chartcount;`
+        vbaprot=[int]$_.vbaprot;`
+        linkcount=[int]$_.linkcount;`
+        filepwd=[int]$_.filepwd;`
+        earlyboundcount=[int]$_.References.Where({$_.BuiltIn -eq $false -and $_.LateBound -eq $false}).count;`
+        lateboundcount=[int]$_.References.Where({$_.LateBound -eq $true}).Count};`
+       new-object psobject -Property $p}| `
+       Create-SqlObject  -tableName "cssrfilescan" -dataSource "LLUCSAPP245P" -database "OfficeScanDB" -username "lsa_rbc_office2010" -password "Welcome001" -Verbose|Create-SqlObject  -tableName "filescan" -dataSource "LLUCSAPP245P" -database "OfficeScanDB" -username "lsa_rbc_office2010" -password "Welcome001" -Verbose
+
+
+$result|
+%{$p= @{fileid=[int]$_.fileid;`
+        broken=[int]$_.References.Where({$_.BuiltIn -eq $false -and $_.IsBroken -eq $true}).count;}
+        new-object psobject -Property $p}
+        
+        | where-object {$_.broken -ne 0}
+
+
+$x = $result|%{$_ $_.references|Where-Object({$_.latebound -eq $true}).count}
+
+$result.Where($_.fileid -eq 3090)
+$result.Where({$_.loc -gt 0})
+
+
+$x = $result.Where({$_.fileid -eq 3091})|`
+%{$p= @{fileid=[int]$_.fileid;`
+        filename=[string]$_.filename;`
+        directory=[string]$_.directory;`
+        size=[int]$_.size;`
+        owner=[string]$_.owner;`
+        created=[datetime]$_.created;`
+        updated=[datetime]$_.updated;`
+        hash=[string]$_.CodeHash;`
+        loc=[int]$_.loc; `
+        axcount=[int]$_.axcount;`
+        chartcount=[int]$_.chartcount;`
+        vbaprot=[int]$_.vbaprot;`
+        linkcount=[int]$_.linkcount;`
+        filepwd=[int]$_.filepwd;`
+        earlyboundcount=[int]$_.References.Where({$_.BuiltIn -eq $false -and $_.LateBound -eq $false}).count;`
+};`
+new-object psobject -Property $p}
+
+
+
+$result.Where({$_.references -ne $null}).Where({$_.references.Where($_.IsBroken -eq $true)})
+
+
+.contains({$_.IsBroken -eq $true})})
+
+
+$result.Contains(
+
+
+
+$result|%{$p= @{fileid=[int]$_.fileid;loc=[int]$_.loc;hash=[string]$_.CodeHash};  `
+       new-object psobject -Property $p}| `
+       Create-SqlObject  -tableName "vbaprot" -dataSource "LLUCSAPP245P" -database "OfficeScanDB" -username "lsa_rbc_office2010" -password "Welcome001" -Verbose
+
+$basicresult|`
+%{$p= @{fileid=[int]$_.fileid;`
+        filename=[string]$_.filename;`
+        directory=[string]$_.directory;`
+        size=[int]$_.size;`
+        owner=[string]$_.owner;`
+        created=[datetime]$_.created;`
+        updated=[datetime]$_.updated;`
+        hash=[string]$_.CodeHash;`
+        loc=[int]$_.loc; `
+        axcount=[int]$_.axcount;`
+        chartcount=[int]$_.chartcount;`
+        vbaprot=[int]$_vbaprot};  `
+       new-object psobject -Property $p}| `
+       Create-SqlObject  -tableName "filescan" -dataSource "LLUCSAPP245P" -database "OfficeScanDB" -username "lsa_rbc_office2010" -password "Welcome001" -Verbose|Create-SqlObject  -tableName "filescan" -dataSource "LLUCSAPP245P" -database "OfficeScanDB" -username "lsa_rbc_office2010" -password "Welcome001" -Verbose
+
+
+
+
+$outfile = "0206allrefs.csv"
+#del $outfile -Force
+foreach ( $item in $result ){
+    foreach ( $ref in $item.References ) {
+
+        New-Object psobject -Property @{
+            FileId     = $item.fileid
+            LateBound  = $ref.LateBound
+            IsBroken   = $ref.IsBroken
+            ComPath    = $ref.ComPath
+            Guid       = $ref.Guid
+            ComName    = $ref.ComName
+            RefCount   = $ref.RefCount
+            ProgId     = $ref.ProgId
+            BuiltIn    = $ref.BuiltIn
+            Comment    = $item.Comment } | export-csv -Path $outfile -append -NoTypeInformation -force
+    
+    }
+}    
+
+
+
+{0D452EE1-E08F-101A-852E-02608C4D0BB4}
+
+
+$type = [System.Runtime.InteropServices.Marshal]::GetTypefromCLSID('{0D452EE1-E08F-101A-852E-02608C4D0BB4}')
+$comObj = [System.Activator]::CreateInstance($type)
+
+
+foreach ($item in $list){
+    new-object psobject -property @{
+          guid=[string]$item.guid
+          path=[string]$item.path
+          isbroken=[bool]$item.IsBroken}|
+          export-csv -path .\guidstatus.csv -append 
+
+}
+
+
+
+[System.Type]::GetTypeFromProgID("ADODB.Stream", $false).Guid
+
+if ( $type -ne $null ) {
+    $comAttr = getComAttributes $type.Guid
+
+
+function GetComAttributesFromClsId($clsid){
+            
+    $foundCls = $false
+    $regPaths = @("HKLM\SOFTWARE\Classes\Wow6432Node\CLSID\","HKLM:\SOFTWARE\CLASSES\CLSID\")
+    $name = $null
+    $server = $null
+
+    foreach ( $clsRoot in $regPaths){
+        $tryPath = "${clsRoot}${clsId}"
+        if (($foundCls -eq $false) -and (Test-Path $tryPath) ) {
+            $name = (Get-ItemProperty $tryPath)."(default)"
+
+            $tryPath = "${clsRoot}${clsId}\InProcServer32"
+            if (Test-Path $tryPath){
+                $server = (Get-ItemProperty $tryPath)."(default)"
+            }
+            else {
+                $tryPath = "${clsRoot}${clsId}\LocalServer32"
+                if (Test-Path $tryPath){
+                    $server = (Get-ItemProperty $tryPath)."(default)"
+                }
+            }
+            $foundCls = $true                    
+        }
+    }
+    return @{name=$name;inprocserver32=$inprocserver32}
+}
+
+GetComattributesFromClsId "0006f03a-0000-0000-c000-000000000046"
+
+
+$eb = import-csv -Path eb.csv 
+
+$text =""
+foreach ($f in $eb){
+    $isbroken = if($f.'Is Broken' -eq $true){1} else {0}
+    $text = "insert into eb(compath,guid,isbroken) values ('{0}','{1}',{2})" -f $f.ComPath, $f.Guid, $isbroken    
+    Add-Content eb.sql $text
+}
+
+
+
+$lb = import-csv -Path lb.csv 
+
+
+$text =""
+foreach ($f in $lb){
+    $isbroken = if($f.'Is Broken' -eq $true){1} else {0}
+    $text = "insert into lb(progid,name,compath,guid,isbroken) values ('{0}','{1}','{2}','{3}',{4})" -f $f.progid, $f.name, $f.ComPath, $f.Guid, $isbroken    
+    Add-Content lb.sql $text
+}
+
+
+
+
+
+$path="\\Bil\shares\RBC_DISB\MIGRATION_OFFICE2010\Luxembourg\LUX_CSSR\EUC Files\FA CU KPIs EUCs\FA3\Daily NAV delay checklist V.1.63.xls"
+
+
+
+$x = @{id=219875;filepath="\\Bil\shares\RBC_DISB\MIGRATION_OFFICE2010\Luxembourg\LUX_CSSR\EUC Files\FA CU KPIs EUCs\FA3\Daily NAV delay checklist V.1.63.xls"}|Get-OfficeDocProps
+
+
+$x = @{id=219875;filepath="\\bil\shares\RBC_DISB\MIGRATION_OFFICE2010\Luxembourg\DSD PRICINGMDF\Pricing\Gestielle Reuters Derivatives.xls"}
+
+$X|Get-ADAccountAuthorizationGroup
+
+
+
+$outfile = "missingrefs0906.csv"
+foreach ( $item in $result ){
+    foreach ( $ref in $item.References ) {
+
+        New-Object psobject -Property @{
+            fileid     = $item.fileid
+            comname    = $ref.ComName
+            compath    = $ref.ComPath
+            guid       = $ref.Guid
+            latebound  = $ref.Latebound
+            isbroken   = $ref.isbroken
+            refcount   = $ref.refcount
+            builtin    = $ref.builtin
+            comment    = $item.Comment } |
+            Create-SqlObject  -tableName "comreferencesall" -dataSource "LLUCSAPP245P" `
+           -database "OfficeScanDB" -username "lsa_rbc_office2010" -password "Welcome001" -Verbose
+    }
+} 
+
+
+$result|%{$_.References|
+%{$p= @{fileid  = [int]$_.fileid; `
+        comname = [string]$_.comname; `
+        compath = [string]$_.compath; `
+        guid=[string]$_.guid; `
+        latebound= if ($_.latebound -eq 'True'){1}else{0};`
+        isbroken= if ($_.isbroken -eq 'True'){1}else{0};`
+        refcount=[int]$_.refcount;`
+        builtin= if ($_.builtin -eq 'True'){1}else{0};`
+        comment=[string]$_.comment};  `
+       new-object psobject -Property $p}| `
+       Create-SqlObject  -tableName "comreferences" -dataSource "LLUCSAPP245P" `
+       -database "OfficeScanDB" -username "lsa_rbc_office2010" -password "Welcome001" -verbose }
+
+create table comreferences(fileid int, comname varchar(50), cmmpath varchar(255), 
+guid varchar(30), latebound bit, isbroken bit, refcount int, builtin bit, comment text)
+
+
+
+
+
+
+$list = @()
+foreach ( $item in $result ){
+    foreach ( $ref in $item.References ) {
+        $p= @{fileid  = [int]$item.fileid; `
+            comname = [string]$ref.comname; `
+            compath = [string]$ref.compath; `
+            guid=[string]$ref.guid; `
+            latebound= if ($ref.latebound -eq 'True'){1}else{0};`
+            isbroken= if ($ref.isbroken -eq 'True'){1}else{0};`
+            refcount=[int]$ref.refcount;`
+            builtin= if ($ref.builtin -eq 'True'){1}else{0};`
+            comment=[string]$ref.comment};
+
+
+        $list += (new-object psobject -Property $p)
+
+
+    }
+} 
+
+$list| Create-SqlObject  -tableName "comreferences" -dataSource "LLUCSAPP245P" `
+       -database "OfficeScanDB" -username "lsa_rbc_office2010" -password "Welcome001" 
+
+
+$result.where({$_.fileid -eq 199607})
+$result.where({$_.fileid -eq 197254})
+
+
+
+
+
+$result.where({$_.loc -gt 0})|`
+%{$p= @{fileid=[int]$_.fileid; hash=[string]$_.CodeHash; loc=[int]$_.loc};`
+       new-object psobject -Property $p}| `
+       Create-SqlObject  -tableName "dsd" -dataSource "LLUCSAPP245P" -database "OfficeScanDB" -username "lsa_rbc_office2010" -password "Welcome001" -Verbose
+       
+
+
+
+
+$result.Where({$_.contains -eq $true})[0].modules|%{write-host $_.modulename, $_.code}>text.t
+
+
+($result.Where({$_.contains -eq $true})[0].filename|split-path -leaf).split('.')[0]+'.txt' 
+
+
+
+
+# Code to extract VBA containing references to shell commands
+$result = $files|%{@{id=$_.fileid;filepath=$_.filepath}}|Get-OfficeDocProps -Contains ('.bat','.cmd','cmd.exe','shell')
+
+$subset = $result.Where({$_.contains -eq $true})
+
+
+foreach ( $item in $subset ){
+    $fname = ($item.FileName|split-path -Leaf).split('.')[0]+'.txt' 
+    foreach ( $module in $item.Modules ){
+        $moduleName = $module.modulename
+#        write-host $module.modulename ' ' "vbsource\${fname}"
+        Add-Content -Path "vbsource\${fname}" -Value "${moduleName}`n" 
+        Add-Content -Path "vbsource\${fname}" -Value $module.Code 
+    }
+}
+
+
+$result = $files|%{@{id=$_.fileid;filepath=$_.filepath}}|Get-OfficeDocProps -ScanMDB $false -Contains ('Application.FileSearch')
+
+
+
+
